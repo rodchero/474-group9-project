@@ -11,7 +11,7 @@ print("Model loaded successfully!")
 
 # 2. Setup the environment for testing
 # You can change "chokepoint" to "sneaky_enemies", "maze", or "safe"
-map_name = "maze"
+map_name = "safe"
 env = gym.make(map_name, render_mode="human", activate_game_status=True)
 
 # 3. Run the evaluation loop
