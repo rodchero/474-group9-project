@@ -1,83 +1,56 @@
-import numpy as np
 import gymnasium as gym
-from collections import defaultdict
-import coverage_gridworld 
-import matplotlib.pyplot as plt
+import coverage_gridworld  # noqa: F401
+from stable_baselines3 import PPO
 
-def get_action(state, q_table, epsilon):
-    """Epsilon-greedy action selection."""
-    if np.random.random() < epsilon:
-        return np.random.randint(0, 5)  # 5 actions (L, D, R, U, Stay)
-    else:
-        # Break ties randomly
-        q_values = q_table[state]
-        max_val = np.max(q_values)
-        return np.random.choice(np.flatnonzero(q_values == max_val))
+# 1. Define the Curriculum Maps (Copied from main.py)
+maze_map = [
+    [3, 2, 0, 0, 0, 0, 2, 0, 0, 0],
+    [0, 2, 0, 2, 2, 0, 2, 0, 2, 2],
+    [0, 2, 0, 2, 0, 0, 2, 0, 0, 0],
+    [0, 2, 0, 2, 0, 2, 2, 2, 2, 0],
+    [0, 2, 0, 2, 0, 0, 2, 0, 0, 0],
+    [0, 2, 0, 2, 2, 0, 2, 0, 2, 2],
+    [0, 2, 0, 2, 0, 0, 2, 0, 0, 0],
+    [0, 2, 0, 2, 0, 2, 2, 2, 2, 0],
+    [0, 2, 0, 2, 0, 4, 2, 4, 0, 0],
+    [0, 0, 0, 2, 0, 0, 0, 0, 0, 0]
+]
 
-def train_sarsa(episodes=2000, alpha=0.1, gamma=0.95, epsilon_start=1.0, epsilon_min=0.01, decay_rate=0.995):
-    # 1. INITIALIZE REWARDS HISTORY
-    rewards_history = [] 
-    
-    env = gym.make("safe", render_mode=None, activate_game_status=False)
-    q_table = defaultdict(lambda: np.zeros(5))
-    epsilon = epsilon_start
+chokepoint_map = [
+    [3, 0, 2, 0, 0, 0, 0, 2, 0, 0],
+    [0, 0, 2, 0, 0, 0, 0, 0, 0, 4],
+    [0, 0, 2, 0, 0, 0, 0, 2, 0, 0],
+    [0, 0, 2, 0, 0, 0, 0, 2, 0, 0],
+    [0, 4, 2, 0, 0, 0, 0, 2, 0, 0],
+    [0, 0, 2, 0, 0, 0, 0, 2, 0, 0],
+    [0, 0, 2, 0, 0, 0, 0, 2, 0, 0],
+    [0, 0, 2, 0, 0, 0, 0, 2, 0, 0],
+    [0, 0, 0, 0, 4, 0, 4, 2, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 2, 0, 0]
+]
 
-    print("Training SARSA Agent...")
-    for ep in range(episodes):
-        obs, _ = env.reset()
-        state = tuple(obs.tolist())
-        
-        action = get_action(state, q_table, epsilon)
-        total_reward = 0
-        done = False
-        
-        while not done:
-            next_obs, reward, terminated, truncated, info = env.step(action)
-            done = terminated or truncated
-            next_state = tuple(next_obs.tolist())
-            
-            next_action = get_action(next_state, q_table, epsilon)
-            
-            td_target = reward + gamma * q_table[next_state][next_action] * (not done)
-            td_error = td_target - q_table[state][action]
-            q_table[state][action] += alpha * td_error
-            
-            state = next_state
-            action = next_action
-            total_reward += reward
-            
-        # 2. SAVE TOTAL REWARD FOR PLOTTING
-        rewards_history.append(total_reward)
-        
-        epsilon = max(epsilon_min, epsilon * decay_rate)
-        
-        if (ep + 1) % 200 == 0:
-            print(f"Episode {ep + 1}/{episodes} | Epsilon: {epsilon:.3f} | Last Reward: {total_reward:.1f}")
+# 2. Setup Environment with the Curriculum
+# By passing a list, the environment rotates through them automatically
+curriculum_maps = [maze_map, chokepoint_map]
+env = gym.make("standard", render_mode=None, predefined_map_list=curriculum_maps)
 
-    env.close()
-    
-    return q_table
+# 3. Algorithm Implementation 
+# Increased entropy (ent_coef) to force the agent to try running through the chokepoint
+model = PPO("MlpPolicy", env, verbose=1, learning_rate=0.0003, ent_coef=0.05, n_steps=2048, batch_size=64)
 
-def test_agent(q_table, map_name="safe"):
-    print(f"\nTesting Agent on map: {map_name}")
-    env = gym.make(map_name, render_mode="human", activate_game_status=True)
-    obs, _ = env.reset()
-    state = tuple(obs.tolist())
-    done = False
-    
-    while not done:
-        # Fully greedy execution (epsilon = 0)
-        action = get_action(state, q_table, epsilon=0)
-        obs, reward, terminated, truncated, info = env.step(action)
-        state = tuple(obs.tolist())
-        done = terminated or truncated
-        
-    env.close()
+# 4. Training (Bumped up to give it time to learn the enemy rotations)
+print("Training for the tournament...")
+model.learn(total_timesteps=500000)
 
-if __name__ == "__main__":
-    # 1. Train the agent
-    trained_q_table = train_sarsa(episodes=2500)
-    
-    # 2. Test the agent visually
-    test_agent(trained_q_table, map_name="sneaky_enemies")
-    
+# 5. Save
+model.save("group9_trained_agent")
+print("Saved as group9_trained_agent.zip")
+input("Run Visual")
+# 6. Visual Validation on the Chokepoint Map specifically
+env_human = gym.make("chokepoint", render_mode="human")
+obs, _ = env_human.reset()
+for _ in range(500):
+    action, _ = model.predict(obs, deterministic=True)
+    obs, reward, done, trunc, info = env_human.step(action)
+    if done or trunc: break
+env_human.close()
