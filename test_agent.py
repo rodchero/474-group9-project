@@ -1,17 +1,17 @@
 import gymnasium as gym
 import coverage_gridworld  # noqa: F401
-from stable_baselines3 import PPO
+from stable_baselines3 import DQN
 import time
 
-# 1. Load the trained model
-# Note: You do not need to include the ".zip" extension in the name
+# 1. Load the trained DQN model
+# Make sure this matches the name you saved in your train_dqn.py script
 print("Loading saved model...")
-model = PPO.load("group9_trained_agent")
+model = DQN.load("group9_dqn_agent")
 print("Model loaded successfully!")
 
 # 2. Setup the environment for testing
 # You can change "chokepoint" to "sneaky_enemies", "maze", or "safe"
-map_name = "chokepoint"
+map_name = "maze"
 env = gym.make(map_name, render_mode="human", activate_game_status=True)
 
 # 3. Run the evaluation loop
@@ -21,7 +21,7 @@ total_reward = 0
 
 while not done:
     # deterministic=True forces the agent to take the "best" action it learned,
-    # rather than exploring randomly like it does during training.
+    # which means it will pick the action with the absolute highest Q-value.
     action, _states = model.predict(obs, deterministic=True)
     
     obs, reward, terminated, truncated, info = env.step(action)
