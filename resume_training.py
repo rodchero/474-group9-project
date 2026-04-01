@@ -30,8 +30,21 @@ sneaky_enemies_map = [
     [0, 2, 0, 2, 0, 0, 2, 0, 2, 0]
 ]
 
-advanced_curriculum = [chokepoint_map, sneaky_enemies_map]
-map_name = "maze"
+safe = [
+    [3, 0, 0, 2, 0, 2, 0, 0, 0, 0],
+    [0, 2, 0, 0, 0, 2, 0, 0, 2, 0],
+    [0, 2, 0, 2, 2, 2, 2, 2, 2, 0],
+    [0, 2, 0, 0, 0, 2, 0, 0, 0, 0],
+    [0, 2, 0, 2, 0, 2, 0, 0, 2, 0],
+    [0, 2, 0, 0, 0, 0, 0, 2, 0, 0],
+    [0, 2, 2, 2, 0, 0, 0, 2, 0, 0],
+    [0, 0, 0, 0, 0, 2, 0, 0, 2, 0],
+    [0, 2, 0, 2, 0, 2, 2, 0, 0, 0],
+    [0, 0, 0, 0, 0, 2, 0, 0, 0, 0]
+]
+
+advanced_curriculum = [safe]
+map_name = "safe"
 # 2. Setup the New Training Environment
 env = gym.make(map_name, render_mode=None, predefined_map_list=advanced_curriculum)
 
