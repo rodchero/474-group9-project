@@ -160,21 +160,20 @@ def observation(grid: np.ndarray):
 
 
 def reward(info: dict) -> float:
-    # A smaller step penalty encourages movement without overpowering early exploration
+    # Flat step penalty applied EVERY turn, even if the agent uses STAY
     r = -0.1 
 
     if info["new_cell_covered"]:
-        # Flat +10 is good, plus a progressive multiplier to encourage finishing the map
+        # Dynamic reward based on progress
         progress = (info["coverable_cells"] - info["cells_remaining"]) / max(info["coverable_cells"], 1)
         r += 10.0 + (15.0 * progress) 
-        
+
     if info["game_over"]:
-        # Death MUST be worse than timing out (-0.1 * 500 = -50)
-        # -200 guarantees dying is always the worst possible outcome
-        r -= 200.0 
+        # Make sure dying is incredibly punishing so it doesn't just suicide to end the episode
+        # but not so punishing that it refuses to take risks? idk man 
+        r -= 100.0 
 
     if info["cells_remaining"] == 0:
-        # Huge win bonus, plus a speed bonus for finishing early
         r += 500.0 + (info["steps_remaining"] * 0.5)
 
     return float(r)

@@ -1,6 +1,8 @@
 import gymnasium as gym
 import coverage_gridworld  # noqa: F401
-from stable_baselines3 import DQN
+from stable_baselines3 import PPO
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.callbacks import CheckpointCallback
 import time
 
 # 1. Curriculum Maps (ordered easy → hard)
@@ -56,68 +58,82 @@ chokepoint_map = [
     [0, 0, 0, 0, 0, 0, 0, 2, 0, 0]
 ]
 
-# order of maps to train on
+# ... [KEEP YOUR CURRICULUM MAPS LIST HERE] ...
 curriculum = [
-    ("JustGo",     just_go_map,     150_000),
+    ("JustGo",     just_go_map,     100_000),
     ("Safe",       safe_map,        200_000),
-    ("Maze",       maze_map,        300_000),
-    ("Chokepoint", chokepoint_map,  500_000),
+    ("Maze",       maze_map,        200_000),
+    ("Chokepoint", chokepoint_map,  200_000),
+    ("JustGo",     just_go_map,     50_000),
+    ("Safe",       safe_map,        50_000),
+    ("Maze",       maze_map,        50_000),
+    ("Chokepoint", chokepoint_map,  50_000),
+    ("JustGo",     just_go_map,     50_000),
+    ("Safe",       safe_map,        50_000),
+    ("Maze",       maze_map,        50_000),
+    ("Chokepoint", chokepoint_map,  50_000),
+    ("JustGo",     just_go_map,     50_000),
+    ("Safe",       safe_map,        50_000),
+    ("Maze",       maze_map,        50_000),
+    ("Chokepoint", chokepoint_map,  50_000),
 ]
 
-total_steps = sum(s for _, _, s in curriculum)  # 650k total
-
-# 3. Initialize the first environment
-first_env = gym.make("standard", render_mode=None, predefined_map=curriculum[0][1])
-
-# 4. Initialize DQN
-model = DQN(
-    "MlpPolicy",
-    first_env,
-    policy_kwargs=dict(net_arch=[256, 256]),
-    verbose=1,
-    learning_rate=1e-4,
-    buffer_size=100_000,
-
-    # Start learning sooner so early curriculum episodes aren't wasted
-    learning_starts=1_000,
-    batch_size=128,
-    gamma=0.99,
-
-    # Exploration: decays over 80% of total training — ensures late-stage maps still explore
-    exploration_fraction=0.8,
-    exploration_initial_eps=1.0,
-    exploration_final_eps=0.05,
-
-    # Stability: more frequent target updates for better Q-value estimates early on
-    target_update_interval=1_000,
-    train_freq=4,
-    gradient_steps=1
+# 1. Setup Checkpoint Saving (Saves every 50k steps per environment)
+# Note: In a VecEnv with 4 envs, save_freq=12500 means it saves every 50,000 total steps
+checkpoint_callback = CheckpointCallback(
+    save_freq=12500, 
+    save_path='./ppo_checkpoints/',
+    name_prefix='ppo_agent'
 )
 
-# 5. Train across the curriculum
+# 2. Create Parallel Environments
+# n_envs=4 means it runs 4 games simultaneously. Change to 8 if your CPU has 8+ cores!
+env_kwargs = {"render_mode": None, "predefined_map": curriculum[0][1]}
+first_vec_env = make_vec_env("standard", n_envs=4, env_kwargs=env_kwargs)
+
+# 3. Initialize PPO
+model = PPO(
+    "MlpPolicy",
+    first_vec_env,
+    verbose=1,
+    learning_rate=3e-4,
+    n_steps=2048,
+    batch_size=64,
+    n_epochs=10,
+    gamma=0.92,
+    ent_coef=0.07,  
+    policy_kwargs=dict(net_arch=[256, 256])
+)
+
+# 4. Train across the curriculum
 for i, (map_name, map_layout, steps) in enumerate(curriculum):
     print(f"\n--- Training Phase {i+1}: {map_name} ({steps:,} steps) ---")
 
     if i > 0:
-        new_env = gym.make("standard", render_mode=None, predefined_map=map_layout)
-        model.set_env(new_env)
+        # Create a new parallel environment for the next map
+        new_env_kwargs = {"render_mode": None, "predefined_map": map_layout}
+        new_vec_env = make_vec_env("standard", n_envs=4, env_kwargs=new_env_kwargs)
+        model.set_env(new_vec_env)
 
-    # reset_num_timesteps=False is critical — keeps exploration decay continuous
-    # across all curriculum phases rather than resetting epsilon each time
-    model.learn(total_timesteps=steps, reset_num_timesteps=False)
+    # Pass the callback here!
+    model.learn(
+        total_timesteps=steps, 
+        reset_num_timesteps=False, 
+        callback=checkpoint_callback
+    )
 
-# 6. Save
-model.save("group9_dqn_agent")
-print("\nSaved as group9_dqn_agent.zip")
+# 5. Save the final model
+model.save("group9_ppo_agent_final")
+print("\nTraining Complete! Saved as group9_ppo_agent_final.zip")
 input("Press Enter to run visual test...")
 
-# 7. Visual test on the hardest map
+# 6. Visual test (We use a single standard gym.make here so we can easily render it)
 print("\nStarting Visual Test on Chokepoint map...")
 env_human = gym.make("standard", render_mode="human", predefined_map=chokepoint_map)
 obs, _ = env_human.reset()
 
 for i in range(500):
-    action, _ = model.predict(obs, deterministic=True)
+    action, _ = model.predict(obs, deterministic=False) 
     print(f"Step {i}: Agent action {action}")
     obs, reward, done, trunc, info = env_human.step(action)
     time.sleep(0.1)
