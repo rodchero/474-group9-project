@@ -5,6 +5,8 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import CheckpointCallback
 import time
 
+CPUS = 8
+
 # 1. Curriculum Maps (ordered easy → hard)
 just_go_map = [
     [3, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -60,10 +62,10 @@ chokepoint_map = [
 
 # ... [KEEP YOUR CURRICULUM MAPS LIST HERE] ...
 curriculum = [
-    ("JustGo",     just_go_map,     100_000),
-    ("Safe",       safe_map,        200_000),
-    ("Maze",       maze_map,        200_000),
-    ("Chokepoint", chokepoint_map,  200_000),
+    ("JustGo",     just_go_map,     150_000),
+    ("Safe",       safe_map,        150_000),
+    ("Maze",       maze_map,        150_000),
+    ("Chokepoint", chokepoint_map,  150_000),
     ("JustGo",     just_go_map,     50_000),
     ("Safe",       safe_map,        50_000),
     ("Maze",       maze_map,        50_000),
@@ -71,14 +73,12 @@ curriculum = [
     ("JustGo",     just_go_map,     50_000),
     ("Safe",       safe_map,        50_000),
     ("Maze",       maze_map,        50_000),
-    ("Chokepoint", chokepoint_map,  50_000),
-    ("JustGo",     just_go_map,     50_000),
-    ("Safe",       safe_map,        50_000),
-    ("Maze",       maze_map,        50_000),
-    ("Chokepoint", chokepoint_map,  50_000),
+    ("Chokepoint", chokepoint_map,  100_000),
 ]
+total_training = sum(s for _, _, s in curriculum)
+print(f"Total timesteps: {total_training}")
 
-# 1. Setup Checkpoint Saving (Saves every 50k steps per environment)
+# 1. Setup Checkpoint Saving (Saves every 50k steps per environment | CPUS=4)
 # Note: In a VecEnv with 4 envs, save_freq=12500 means it saves every 50,000 total steps
 checkpoint_callback = CheckpointCallback(
     save_freq=12500, 
@@ -89,7 +89,7 @@ checkpoint_callback = CheckpointCallback(
 # 2. Create Parallel Environments
 # n_envs=4 means it runs 4 games simultaneously. Change to 8 if your CPU has 8+ cores!
 env_kwargs = {"render_mode": None, "predefined_map": curriculum[0][1]}
-first_vec_env = make_vec_env("standard", n_envs=4, env_kwargs=env_kwargs)
+first_vec_env = make_vec_env("standard", n_envs=CPUS, env_kwargs=env_kwargs)
 
 # 3. Initialize PPO
 model = PPO(
@@ -100,10 +100,11 @@ model = PPO(
     n_steps=2048,
     batch_size=64,
     n_epochs=10,
-    gamma=0.92,
-    ent_coef=0.07,  
-    policy_kwargs=dict(net_arch=[256, 256])
+    gamma=0.94,
+    ent_coef=0.06,  
+    policy_kwargs=dict(net_arch=[256, 128, 64]) # they call me "the funnel"
 )
+
 
 # 4. Train across the curriculum
 for i, (map_name, map_layout, steps) in enumerate(curriculum):
@@ -112,7 +113,7 @@ for i, (map_name, map_layout, steps) in enumerate(curriculum):
     if i > 0:
         # Create a new parallel environment for the next map
         new_env_kwargs = {"render_mode": None, "predefined_map": map_layout}
-        new_vec_env = make_vec_env("standard", n_envs=4, env_kwargs=new_env_kwargs)
+        new_vec_env = make_vec_env("standard", n_envs=CPUS, env_kwargs=new_env_kwargs)
         model.set_env(new_vec_env)
 
     # Pass the callback here!
