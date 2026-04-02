@@ -73,6 +73,7 @@ first_env = gym.make("standard", render_mode=None, predefined_map=curriculum[0][
 model = DQN(
     "MlpPolicy",
     first_env,
+    policy_kwargs=dict(net_arch=[256, 256]),
     verbose=1,
     learning_rate=1e-4,
     buffer_size=100_000,
