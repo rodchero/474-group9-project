@@ -62,18 +62,10 @@ chokepoint_map = [
 
 # ... [KEEP YOUR CURRICULUM MAPS LIST HERE] ...
 curriculum = [
-    ("JustGo",     just_go_map,     150_000),
-    ("Safe",       safe_map,        150_000),
-    ("Maze",       maze_map,        150_000),
-    ("Chokepoint", chokepoint_map,  150_000),
-    ("JustGo",     just_go_map,     50_000),
-    ("Safe",       safe_map,        50_000),
-    ("Maze",       maze_map,        50_000),
-    ("Chokepoint", chokepoint_map,  50_000),
-    ("JustGo",     just_go_map,     50_000),
-    ("Safe",       safe_map,        50_000),
-    ("Maze",       maze_map,        50_000),
-    ("Chokepoint", chokepoint_map,  100_000),
+    ("JustGo",     just_go_map,     100_000),
+    ("Safe",       safe_map,        200_000),
+    ("Maze",       maze_map,        300_000),
+    ("Chokepoint", chokepoint_map,  800_000),
 ]
 total_training = sum(s for _, _, s in curriculum)
 print(f"Total timesteps: {total_training}")
@@ -98,11 +90,11 @@ model = PPO(
     verbose=1,
     learning_rate=3e-4,
     n_steps=2048,
-    batch_size=64,
+    batch_size=512,
     n_epochs=10,
-    gamma=0.94,
-    ent_coef=0.06,  
-    policy_kwargs=dict(net_arch=[256, 128, 64]) # they call me "the funnel"
+    gamma=0.95,
+    ent_coef=0.04,  
+    policy_kwargs=dict(net_arch=dict(pi=[128, 128], vf=[256, 256, 128]))
 )
 
 
