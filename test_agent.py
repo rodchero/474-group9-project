@@ -3,7 +3,7 @@ import coverage_gridworld  # noqa: F401
 from stable_baselines3 import PPO
 import time
 
-# 1. Curriculum Maps (ordered easy → hard)
+# --- TRAINING MAPS (Seen by agent) ---
 just_go_map = [
     [3, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -56,12 +56,55 @@ chokepoint_map = [
     [0, 0, 0, 0, 0, 0, 0, 2, 0, 0]
 ]
 
-# Create an iterable list of all maps
+# --- EVALUATION MAPS (Unseen by agent) ---
+test_map1 = [
+    [3, 0, 0, 0, 2, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 2, 0, 0, 0, 0, 0],
+    [0, 0, 2, 0, 2, 0, 2, 2, 2, 0],
+    [0, 0, 2, 0, 0, 0, 0, 0, 2, 0],
+    [2, 2, 2, 2, 2, 0, 0, 0, 2, 0],
+    [0, 0, 0, 0, 0, 0, 2, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 2, 0, 0, 0],
+    [0, 2, 2, 2, 2, 2, 2, 2, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+]
+
+test_map2 = [
+    [3, 0, 2, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 2, 0, 2, 2, 2, 2, 2, 0],
+    [0, 0, 2, 0, 2, 0, 0, 0, 0, 0],
+    [0, 0, 2, 0, 2, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 2, 0, 4, 0, 0, 0],
+    [2, 2, 2, 0, 2, 2, 2, 2, 2, 2],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 2, 2, 2, 2, 2, 2, 2, 0, 0],
+    [0, 0, 0, 0, 4, 0, 0, 2, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 2, 0, 0]
+]
+
+test_map3 = [
+    [3, 2, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 2, 0, 2, 2, 2, 2, 2, 2, 0],
+    [0, 2, 0, 2, 0, 0, 0, 0, 2, 0],
+    [0, 0, 0, 2, 0, 4, 0, 0, 2, 0],
+    [2, 2, 0, 2, 0, 0, 0, 0, 2, 0],
+    [0, 0, 0, 2, 2, 2, 0, 2, 2, 0],
+    [0, 4, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 2, 2, 2, 0, 2, 2, 0],
+    [2, 2, 2, 2, 0, 0, 0, 4, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+]
+
+# Add all maps to the iterable test list
 maps_to_test = [
-    ("JustGo", just_go_map),
-    ("Safe", safe_map),
-    ("Maze", maze_map),
-    ("Chokepoint", chokepoint_map)
+    ("JustGo (Train)", just_go_map),
+    ("Safe (Train)", safe_map),
+    ("Maze (Train)", maze_map),
+    ("Chokepoint (Train)", chokepoint_map),
+    ("Test 1 (Easy)", test_map1),
+    ("Test 2 (Medium)", test_map2),
+    ("Test 3 (Hard)", test_map3)
 ]
 
 def main():
@@ -115,12 +158,12 @@ def main():
         print(f"✔ {map_name} complete.")
 
     # 4. Print the final summary table
-    print("\n" + "=" * 42)
-    print(f"| {'Map Name':<15} | {'Average Coverage':<18} |")
-    print("-" * 42)
+    print("\n" + "=" * 46)
+    print(f"| {'Map Name':<20} | {'Average Coverage':<18} |")
+    print("-" * 46)
     for map_name, avg_cov in results.items():
-        print(f"| {map_name:<15} | {avg_cov:>16.2f} % |")
-    print("=" * 42 + "\n")
+        print(f"| {map_name:<20} | {avg_cov:>16.2f} % |")
+    print("=" * 46 + "\n")
 
 if __name__ == "__main__":
     main()
