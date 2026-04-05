@@ -4,14 +4,18 @@ import gymnasium as gym
 OBS_MODE = "compass"      # Options: "compass", "local_3x3"
 REWARD_MODE = "balanced"  # Options: "balanced", "cautious", "speed"
 
+CURRENT_DANGER_LEVEL = 0
+
 def observation_space(env: gym.Env) -> gym.spaces.Space:
     if OBS_MODE == "compass":
-        # 5x5 local grid (25 cells, 7 colors)
-        # + Target relative Y, X         (3 options each: -1/0/+1 mapped to 0/1/2)
-        # + Enemy relative Y, X          (4 options: 0/1/2 = direction, 3 = no enemy)
-        # + Danger flag                  (2 options: 0 or 1)
-        # + Blocked directions L/D/R/U   (2 options each: 0 = free, 1 = blocked)
-        return gym.spaces.MultiDiscrete([7] * 25 + [3, 3, 4, 4, 2, 2, 2, 2, 2])
+        # Full 10x10 grid (100 cells, 7 colors)
+        # + Target relative Y, X              (3 options each)
+        # + Enemy relative Y, X               (4 options: 0/1/2 = direction, 3 = no enemy)
+        # + Danger flag                        (2 options: 0/1)
+        # + FOV pressure: red cells adjacent  (5 options: 0-4, how many of 4 dirs are red)
+        # + Blocked directions L/D/R/U        (2 options each)
+        # Total: 100 + 2 + 2 + 2 + 1 + 4 = 111 values
+        return gym.spaces.MultiDiscrete([7] * 100 + [3, 3, 4, 4, 2, 5, 2, 2, 2, 2])
     else:
         return gym.spaces.MultiDiscrete([7] * 9)
 
@@ -23,27 +27,24 @@ def observation(grid: np.ndarray):
     ay, ax = coords[0] if len(coords) > 0 else (0, 0)
 
     if OBS_MODE == "compass":
-        # 2. Compress RGB grid to integer color IDs
+        # 2. Compress full 10x10 RGB grid to integer color IDs
         c_map = {
-            (0,   0,   0):   0,  # Black       - unexplored
-            (255, 255, 255): 1,  # White       - explored
-            (101, 67,  33):  2,  # Brown       - wall
-            (160, 161, 161): 3,  # Grey        - agent
-            (31,  198, 0):   4,  # Green       - enemy
-            (255, 0,   0):   5,  # Red         - enemy FOV (unexplored)
-            (255, 127, 127): 6,  # Light red   - enemy FOV (explored)
+            (0,   0,   0):   0,  # Black      - unexplored
+            (255, 255, 255): 1,  # White      - explored
+            (101, 67,  33):  2,  # Brown      - wall
+            (160, 161, 161): 3,  # Grey       - agent
+            (31,  198, 0):   4,  # Green      - enemy
+            (255, 0,   0):   5,  # Red        - enemy FOV (unexplored)
+            (255, 127, 127): 6,  # Light red  - enemy FOV (explored)
         }
         comp = np.zeros((10, 10), dtype=np.int8)
         for i in range(10):
             for j in range(10):
                 comp[i, j] = c_map.get(tuple(grid[i, j]), 0)
 
-        # 3. Extract 5x5 local window padded with walls
-        pad = np.pad(comp, 2, mode='constant', constant_values=2)
-        cy, cx = ay + 2, ax + 2
-        local_5x5 = pad[cy-2:cy+3, cx-2:cx+3].flatten()
+        full_grid = comp.flatten()
 
-        # 4. Target compass: direction to nearest unexplored (black) cell
+        # 3. Target compass: direction to nearest unexplored (black) cell
         black_mask = np.all(grid == [0, 0, 0], axis=-1)
         blacks = np.argwhere(black_mask)
         if len(blacks) > 0:
@@ -54,7 +55,7 @@ def observation(grid: np.ndarray):
         else:
             rel_y, rel_x = 1, 1
 
-        # 5. Enemy compass: direction to nearest enemy (3 = no enemies)
+        # 4. Enemy compass: direction to nearest enemy (3 = no enemies)
         enemy_mask = np.all(grid == [31, 198, 0], axis=-1)
         enemies = np.argwhere(enemy_mask)
         if len(enemies) > 0:
@@ -65,28 +66,43 @@ def observation(grid: np.ndarray):
         else:
             enemy_rel_y, enemy_rel_x = 3, 3
 
-        # 6. Danger flag: any adjacent cell under enemy FOV?
-        red_mask = np.all(grid == [255, 0, 0], axis=-1).astype(np.int8)
-        pad_r = np.pad(red_mask, 1)
-        danger = int(pad_r[ay:ay+3, ax:ax+3].sum() > 0)
+        # 5. Danger flag: is the agent's current cell under FOV?
+        # True if agent is standing on a red/light-red cell
+        agent_cell = comp[ay, ax]
+        danger = int(agent_cell in (5, 6))
 
+        # 6. FOV pressure: how many of the 4 adjacent cells are red/light-red?
+        # This is the enemy timing signal — it tells the agent how "surrounded"
+        # by guard vision it is right now. As a guard rotates away, this count
+        # drops from 2 → 1 → 0, teaching the agent to wait for 0 before moving
+        # into a previously-watched cell.
+        fov_pressure = 0
+        for dy, dx in [(0, -1), (1, 0), (0, 1), (-1, 0)]:
+            ny, nx = ay + dy, ax + dx
+            if 0 <= ny < 10 and 0 <= nx < 10:
+                if comp[ny, nx] in (5, 6):
+                    fov_pressure += 1
+
+        global CURRENT_DANGER_LEVEL
+        CURRENT_DANGER_LEVEL = fov_pressure
         # 7. Blocked directions L/D/R/U
-        # This is the critical signal for generalizing to unseen maps —
-        # the agent explicitly knows which moves are valid right now
-        # without having to memorize any layout.
+        # Wall or enemy in that direction = 1, free = 0.
+        # This is computed purely from the current grid state — no wrapper needed.
         blocked = np.zeros(4, dtype=np.int64)
         for idx, (dy, dx) in enumerate([(0, -1), (1, 0), (0, 1), (-1, 0)]):
             ny, nx = ay + dy, ax + dx
             if not (0 <= ny < 10 and 0 <= nx < 10):
-                blocked[idx] = 1
+                blocked[idx] = 1  # Grid edge = wall
             elif comp[ny, nx] in (2, 4):
-                blocked[idx] = 1
+                blocked[idx] = 1  # Brown wall or green enemy = blocked
 
         return np.concatenate(
-            (local_5x5, [rel_y, rel_x, enemy_rel_y, enemy_rel_x, danger], blocked)
+            (full_grid, [rel_y, rel_x, enemy_rel_y, enemy_rel_x,
+                         danger, fov_pressure], blocked)
         ).astype(np.int64)
 
     else:
+        # --- LOCAL 3x3 (second observation space for report experiments) ---
         c_map = {
             (0,   0,   0):   0,
             (255, 255, 255): 1,
@@ -107,28 +123,28 @@ def observation(grid: np.ndarray):
 
 
 def reward(info: dict) -> float:
+
+    global CURRENT_DANGER_LEVEL
+
     if REWARD_MODE == "balanced":
-        r = -0.3  # Base step penalty on all actions including STAY
+        if CURRENT_DANGER_LEVEL > 0:
+            r = -0.1  # near danger slow down
+        else:
+            r = -0.6  # not near danger, keep moving
 
         if info["new_cell_covered"]:
             cells_done = info["coverable_cells"] - info["cells_remaining"]
             progress = cells_done / max(info["coverable_cells"], 1)
-            r += 10.0 + (15.0 * progress)  # +10 early, up to +25 late
-
-        else:
-            # Penalize hitting a wall: agent position didn't change but a move
-            # action was taken. We detect this by checking if agent is still
-            # on an already-explored (white or light-red) cell after moving.
-            # The env returns new_cell_covered=False for both wall hits AND
-            # revisiting explored cells, so we apply a moderate penalty for both.
-            # This is the fix for the "action 3 UP into top wall" loop —
-            # without this, hitting a wall costs only the base -0.3 step penalty
-            # which is not enough signal to learn "don't do that on new maps".
-            r -= 1.5
+            
+            # The base reward (scales from 10 to 25)
+            base_reward = 10.0 + (15.0 * progress)  
+            
+            # # HAZARD PAY: +5 bonus points for every level of FOV pressure
+            # hazard_bonus = CURRENT_DANGER_LEVEL * 5.0 
+            
+            r += base_reward
 
         if info["game_over"]:
-            # Scale death penalty by cells remaining — dying early is much
-            # worse than dying with 2 cells left
             r -= 50.0 + (info["cells_remaining"] * 1.5)
 
         if info["cells_remaining"] == 0:
@@ -138,8 +154,6 @@ def reward(info: dict) -> float:
         r = -0.3
         if info["new_cell_covered"]:
             r += 8.0
-        else:
-            r -= 1.0  # Wall hit / revisit penalty
         if info["game_over"]:
             r -= 150.0
 
