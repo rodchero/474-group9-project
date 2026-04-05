@@ -1,37 +1,13 @@
-import os
-import time
-import numpy as np
 import gymnasium as gym
 import coverage_gridworld  # noqa: F401
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import SubprocVecEnv
-from stable_baselines3.common.callbacks import EvalCallback
-import warnings
+from stable_baselines3.common.callbacks import CheckpointCallback
+import time
 
-# --- SMOKE TEST FLAG ---
-# True  = 5k steps per phase (~2 mins, verifies no crashes)
-# False = full training run
-SMOKE_TEST = False
+CPUS = 8
 
-N_ENVS = 8
-
-
-# --- 1. Environment factory ---
-# No wrapper needed — observation and reward are fully self-contained in custom.py.
-# The model zip + custom.py is all the tournament needs.
-def make_env(map_layout=None, map_list=None):
-    def _init():
-        if map_list is not None:
-            return gym.make("standard", render_mode=None, predefined_map_list=map_list)
-        elif map_layout is not None:
-            return gym.make("standard", render_mode=None, predefined_map=map_layout)
-        else:
-            return gym.make("standard", render_mode=None)
-    return _init
-
-
-# --- 2. Maps ---
+# 1. Curriculum Maps (ordered easy → hard)
 just_go_map = [
     [3, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -84,62 +60,12 @@ chokepoint_map = [
     [0, 0, 0, 0, 0, 0, 0, 2, 0, 0]
 ]
 
-random_no_enemy_maps = [
-    [
-        [3, 0, 0, 0, 2, 0, 0, 0, 0, 0],
-        [0, 2, 0, 0, 2, 0, 2, 0, 2, 0],
-        [0, 2, 0, 0, 0, 0, 2, 0, 0, 0],
-        [0, 0, 0, 2, 0, 0, 2, 0, 0, 0],
-        [0, 0, 2, 2, 0, 0, 0, 0, 2, 0],
-        [0, 0, 0, 0, 0, 2, 0, 0, 2, 0],
-        [0, 2, 0, 0, 0, 2, 0, 0, 0, 0],
-        [0, 2, 0, 2, 0, 0, 0, 2, 0, 0],
-        [0, 0, 0, 2, 0, 0, 2, 2, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    ],
-    [
-        [3, 0, 2, 0, 0, 0, 2, 0, 0, 0],
-        [0, 0, 2, 0, 2, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 2, 0, 2, 2, 0, 0],
-        [2, 0, 0, 0, 0, 0, 0, 2, 0, 0],
-        [2, 0, 2, 0, 0, 2, 0, 0, 0, 0],
-        [0, 0, 2, 0, 0, 2, 0, 0, 2, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 2, 0],
-        [0, 2, 0, 2, 2, 0, 0, 0, 0, 0],
-        [0, 2, 0, 0, 0, 0, 2, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 2, 0, 0, 0]
-    ],
-    [
-        [3, 0, 0, 2, 0, 0, 0, 2, 0, 0],
-        [0, 0, 0, 2, 0, 2, 0, 2, 0, 0],
-        [0, 2, 0, 0, 0, 2, 0, 0, 0, 0],
-        [0, 2, 0, 0, 0, 0, 0, 0, 2, 0],
-        [0, 0, 0, 2, 2, 0, 2, 0, 2, 0],
-        [0, 0, 2, 0, 0, 0, 2, 0, 0, 0],
-        [2, 0, 2, 0, 0, 0, 0, 0, 0, 0],
-        [2, 0, 0, 0, 2, 0, 0, 2, 0, 0],
-        [0, 0, 0, 0, 2, 0, 0, 2, 0, 0],
-        [0, 0, 2, 0, 0, 0, 0, 0, 0, 0]
-    ],
-    [
-        [3, 0, 0, 0, 0, 2, 0, 0, 0, 0],
-        [0, 0, 2, 2, 0, 2, 0, 2, 0, 0],
-        [0, 0, 2, 0, 0, 0, 0, 2, 0, 0],
-        [0, 0, 0, 0, 2, 0, 0, 0, 0, 0],
-        [2, 2, 0, 0, 2, 0, 0, 0, 2, 0],
-        [0, 0, 0, 0, 0, 0, 2, 0, 2, 0],
-        [0, 2, 0, 2, 0, 0, 2, 0, 0, 0],
-        [0, 2, 0, 0, 0, 2, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 2, 0, 2, 0, 0],
-        [0, 0, 2, 0, 0, 0, 0, 2, 0, 0]
-    ],
-]
-
+# ... [KEEP YOUR CURRICULUM MAPS LIST HERE] ...
 curriculum = [
-    ("JustGo",     just_go_map,     100_000),
-    ("Safe",       safe_map,        200_000),
-    ("Maze",       maze_map,        300_000),
-    ("Chokepoint", chokepoint_map,  300_000),
+    ("JustGo",     just_go_map,     150_000),
+    ("Safe",       safe_map,        150_000),
+    ("Maze",       maze_map,        150_000),
+    ("Chokepoint", chokepoint_map,  150_000),
     ("JustGo",     just_go_map,     50_000),
     ("Safe",       safe_map,        50_000),
     ("Maze",       maze_map,        50_000),
@@ -149,102 +75,76 @@ curriculum = [
     ("Maze",       maze_map,        50_000),
     ("Chokepoint", chokepoint_map,  100_000),
 ]
+total_training = sum(s for _, _, s in curriculum)
+print(f"Total timesteps: {total_training}")
+
+# 1. Setup Checkpoint Saving (Saves every 50k steps per environment | CPUS=4)
+# Note: In a VecEnv with 4 envs, save_freq=12500 means it saves every 50,000 total steps
+checkpoint_callback = CheckpointCallback(
+    save_freq=12500, 
+    save_path='./ppo_checkpoints/',
+    name_prefix='ppo_agent'
+)
+
+# 2. Create Parallel Environments
+# n_envs=4 means it runs 4 games simultaneously. Change to 8 if your CPU has 8+ cores!
+env_kwargs = {"render_mode": None, "predefined_map": curriculum[0][1]}
+first_vec_env = make_vec_env("standard", n_envs=CPUS, env_kwargs=env_kwargs)
+
+# 3. Initialize PPO
+model = PPO(
+    "MlpPolicy",
+    first_vec_env,
+    verbose=1,
+    learning_rate=3e-4,
+    tensorboard_log="./ppo_tensorboard_logs/",
+    n_steps=2048,
+    batch_size=64,
+    n_epochs=10,
+    gamma=0.94,
+    ent_coef=0.06,  
+    policy_kwargs=dict(net_arch=[256, 128, 64]) # they call me "the funnel"
+)
 
 
-if __name__ == "__main__":
-    warnings.filterwarnings(
-        "ignore",
-        message="Training and eval env are not of the same type"
+# 4. Train across the curriculum
+for i, (map_name, map_layout, steps) in enumerate(curriculum):
+    print(f"\n--- Training Phase {i+1}: {map_name} ({steps:,} steps) ---")
+
+    if i > 0:
+        # Create a new parallel environment for the next map
+        new_env_kwargs = {"render_mode": None, "predefined_map": map_layout}
+        new_vec_env = make_vec_env("standard", n_envs=CPUS, env_kwargs=new_env_kwargs)
+        model.set_env(new_vec_env)
+
+    # Pass the callback here!
+    model.learn(
+        total_timesteps=steps, 
+        reset_num_timesteps=False, 
+        callback=checkpoint_callback
     )
 
-    total_steps = sum(s for _, _, s in curriculum)
-    print(f"Total training steps: {total_steps:,} ({'SMOKE TEST' if SMOKE_TEST else 'FULL RUN'})")
-    print(f"Parallel envs: {N_ENVS}")
+# 5. Save the final model
+model.save("group9_ppo_agent_final")
+print("\nTraining Complete! Saved as group9_ppo_agent_final.zip")
+input("Press Enter to run visual test...")
 
-    # --- EvalCallback ---
-    os.makedirs("./best_model_logs/", exist_ok=True)
-    eval_env = make_vec_env(make_env(map_layout=chokepoint_map), n_envs=1)
-    eval_callback = EvalCallback(
-        eval_env,
-        best_model_save_path="./best_model_logs/",
-        log_path="./best_model_logs/",
-        eval_freq=max(5_000 // N_ENVS, 1),
-        n_eval_episodes=5,
-        deterministic=True,
-        render=False,
-        warn=False
-    )
+# 6. Visual test (We use a single standard gym.make here so we can easily render it)
+print("\nStarting Visual Test on Chokepoint map...")
+env_human = gym.make("standard", render_mode="human", predefined_map=chokepoint_map)
+obs, _ = env_human.reset()
 
-    # --- Initialize PPO ---
-    first_vec_env = SubprocVecEnv(
-        [make_env(map_layout=just_go_map) for _ in range(N_ENVS)]
-    )
+for i in range(500):
+    action, _ = model.predict(obs, deterministic=False) 
+    print(f"Step {i}: Agent action {action}")
+    obs, reward, done, trunc, info = env_human.step(action)
+    time.sleep(0.1)
 
-    model = PPO(
-        "MlpPolicy",
-        first_vec_env,
-        verbose=1,
-        tensorboard_log="./ppo_tensorboard_logs/",
-        learning_rate=3e-4,
-        n_steps=512,
-        batch_size=1024,
-        n_epochs=6,
-        gamma=0.99,
-        gae_lambda=0.95,
-        clip_range=0.2,
-        ent_coef=0.04,
-        vf_coef=0.5,
-        max_grad_norm=0.5,
-    )
+    if done or trunc:
+        status = "Game Over" if info.get("game_over") else "Cleared or Timeout"
+        coverage = info.get("total_covered_cells", "?")
+        coverable = info.get("coverable_cells", "?")
+        print(f"Episode ended! Status: {status} | Coverage: {coverage}/{coverable}")
+        break
 
-    # --- Curriculum Training Loop ---
-    for i, (map_name, map_layout, steps) in enumerate(curriculum):
-        print(f"\n--- Phase {i+1}/{len(curriculum)}: {map_name} ({steps:,} steps) ---")
-
-        if i > 0:
-            if map_layout is None:
-                new_vec_env = SubprocVecEnv([make_env() for _ in range(N_ENVS)])
-            elif isinstance(map_layout, list) and isinstance(map_layout[0][0], list):
-                new_vec_env = SubprocVecEnv([make_env(map_list=map_layout) for _ in range(N_ENVS)])
-            else:
-                new_vec_env = SubprocVecEnv([make_env(map_layout=map_layout) for _ in range(N_ENVS)])
-            model.set_env(new_vec_env)
-
-        cb = eval_callback if map_name == "Chokepoint" else None
-        model.learn(
-            total_timesteps=steps,
-            reset_num_timesteps=False,
-            callback=cb,
-            tb_log_name="ppo_curriculum_run",
-        )
-
-    print("\n=== Training Complete ===")
-
-    # --- Save ---
-    model.save("group9_ppo_agent")
-    print("Final model saved as group9_ppo_agent.zip")
-    print("Best chokepoint model saved in ./best_model_logs/best_model.zip")
-    print("\nTo view tensorboard: tensorboard --logdir ./ppo_tensorboard_logs/")
-
-    if not SMOKE_TEST:
-        input("\nPress Enter to run visual test...")
-
-        print("\nRunning visual test on Chokepoint map...")
-        env_human = gym.make("standard", render_mode="human", predefined_map=chokepoint_map)
-        obs, _ = env_human.reset()
-
-        for step in range(500):
-            action, _ = model.predict(obs[np.newaxis, :], deterministic=True)
-            obs, rew, done, trunc, info = env_human.step(int(action[0]))
-            time.sleep(0.1)
-
-            if done or trunc:
-                status = "Game Over" if info.get("game_over") else "Cleared or Timeout"
-                covered = info.get("total_covered_cells", "?")
-                coverable = info.get("coverable_cells", "?")
-                print(f"Step {step} | {status} | Coverage: {covered}/{coverable}")
-                break
-
-        env_human.close()
-    else:
-        print("\nSmoke test complete — set SMOKE_TEST = False for full training run.")
+env_human.close()
