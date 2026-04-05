@@ -29,12 +29,12 @@ IDX_BLOCK_R   = 108
 IDX_BLOCK_U   = 109
 
 print("Loading final model...")
-model = PPO.load("./best_model_logs/best_model")
+model = PPO.load("./ppo_checkpoints\ppo_agent_1200000_steps.zip")
 # model = PPO.load("group9_ppo_agent")
 print("Model loaded successfully!")
 
 # Change to test different maps: "safe", "maze", "chokepoint", "just_go"
-map_name = "just_go"
+map_name = "chokepoint"
 
 # Create the pure environment (No wrappers needed!)
 env = gym.make(map_name, render_mode="human", activate_game_status=True)
