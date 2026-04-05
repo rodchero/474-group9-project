@@ -1,7 +1,8 @@
 import numpy as np
 import gymnasium as gym
 
-
+REWARD_STRUCTURE = "R1" # R1, R2, else speed reward structure
+OBSERVATION_STRUCTURE = "O1" #O1 or O2
 def observation_space(env: gym.Env) -> gym.spaces.Space:
 
     # 5x5 local grid (25) + exact rel_y, rel_x (21, 21) + exact enemy_y, enemy_x (21, 21) + 4 danger directions
@@ -81,24 +82,60 @@ def observation(grid: np.ndarray):
 
 
 def reward(info: dict) -> float:
-    r = -0.1  # Standard step penalty
+    
+    if REWARD_STRUCTURE == "R1": # first reward structure type
+        r = -0.1  # Standard step penalty
 
-    if info["new_cell_covered"]:
-        progress = (info["coverable_cells"] - info["cells_remaining"]) / max(info["coverable_cells"], 1)
-        
-        # THE ENDGAME SPIKE
-        if info["cells_remaining"] <= 10:
-            # Desperation mode: The final cells are worth an absolute fortune. 
-            # The agent will gladly risk a death penalty for this.
-            r += 60.0 
+        if info["new_cell_covered"]:
+            progress = (info["coverable_cells"] - info["cells_remaining"]) / max(info["coverable_cells"], 1)
+            
+            # THE ENDGAME SPIKE
+            if info["cells_remaining"] <= 10:
+                # Desperation mode: The final cells are worth an absolute fortune. 
+                # The agent will gladly risk a death penalty for this.
+                r += 60.0 
+            else:
+                # Standard progression reward
+                r += 15.0 + (20.0 * progress) 
+            
+        if info["game_over"]:
+            r -= 100.0 
+
+        if info["cells_remaining"] == 0:
+            r += 500.0 + (info["steps_remaining"] * 0.5)
+
+        return float(r)
+    
+    elif REWARD_STRUCTURE == "R2": # second reward structure type
+        global CURRENT_DANGER_LEVEL
+
+        if CURRENT_DANGER_LEVEL > 0:
+            r = -0.1  # in a danger zone slow down
         else:
-            # Standard progression reward
-            r += 15.0 + (20.0 * progress) 
+            r = -0.6  # not in danger speed up
+
+        if info["new_cell_covered"]:
+            cells_done = info["coverable_cells"] - info["cells_remaining"]
+            progress = cells_done / max(info["coverable_cells"], 1)
+            
+            # The base reward (scales from 10 to 25)
+            base_reward = 10.0 + (15.0 * progress)  
+            
+            r += base_reward
+
+        if info["game_over"]:
+            r -= 50.0 + (info["cells_remaining"] * 1.5)
+
+        if info["cells_remaining"] == 0:
+            r += 1000.0 + (info["steps_remaining"] * 1.0)
+
+        return float(r)
+
+    else:  # speed
+        r = -1.0
+        if info["new_cell_covered"]:
+            r += 5.0
+        if info["cells_remaining"] == 0:
+            r += 300.0
         
-    if info["game_over"]:
-        r -= 100.0 
-
-    if info["cells_remaining"] == 0:
-        r += 500.0 + (info["steps_remaining"] * 0.5)
-
-    return float(r)
+        return float(r)
