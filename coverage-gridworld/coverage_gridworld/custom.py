@@ -29,11 +29,11 @@ def observation_space(env: gym.Env) -> gym.spaces.Space:
 
 def observation(grid: np.ndarray):
     
+    agent_mask = np.all(grid == [160, 161, 161], axis=-1)
+    coords = np.argwhere(agent_mask)
+    ay, ax = coords[0] if len(coords) > 0 else (0, 0)
+
     if OBSERVATION_STRUCTURE == "O1":
-        # 1. Locate the agent
-        agent_mask = np.all(grid == [160, 161, 161], axis=-1)
-        coords = np.argwhere(agent_mask)
-        ay, ax = coords[0] if len(coords) > 0 else (0, 0)
 
         c_map = {(0,0,0):0, (255,255,255):1, (101,67,33):2, (160,161,161):3,
                     (31,198,0):4, (255,0,0):5, (255,127,127):6}
