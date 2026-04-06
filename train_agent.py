@@ -5,9 +5,10 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import CheckpointCallback
 import time
 
+#CPU cores used for training
 CPUS = 8
 
-# 1. Curriculum Maps (ordered easy → hard)
+# our maps
 just_go_map = [
     [3, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -60,7 +61,7 @@ chokepoint_map = [
     [0, 0, 0, 0, 0, 0, 0, 2, 0, 0]
 ]
 
-# ... [KEEP YOUR CURRICULUM MAPS LIST HERE] ...
+# training ciricullum
 curriculum = [
     ("JustGo",     just_go_map,     150_000),
     ("Safe",       safe_map,        150_000),
@@ -78,20 +79,18 @@ curriculum = [
 total_training = sum(s for _, _, s in curriculum)
 print(f"Total timesteps: {total_training}")
 
-# 1. Setup Checkpoint Saving (Saves every 50k steps per environment | CPUS=4)
-# Note: In a VecEnv with 4 envs, save_freq=12500 means it saves every 50,000 total steps
+# model saving to ensure we keep the best model before it collapses
 checkpoint_callback = CheckpointCallback(
     save_freq=12500, 
     save_path='./ppo_checkpoints/',
     name_prefix='ppo_agent'
 )
 
-# 2. Create Parallel Environments
-# n_envs=4 means it runs 4 games simultaneously. Change to 8 if your CPU has 8+ cores!
+# environment parallelization 
 env_kwargs = {"render_mode": None, "predefined_map": curriculum[0][1]}
 first_vec_env = make_vec_env("standard", n_envs=CPUS, env_kwargs=env_kwargs)
 
-# 3. Initialize PPO
+# PPO model defined HERE
 model = PPO(
     "MlpPolicy",
     first_vec_env,
@@ -107,29 +106,29 @@ model = PPO(
 )
 
 
-# 4. Train across the curriculum
+# train the model with our ciricullum
 for i, (map_name, map_layout, steps) in enumerate(curriculum):
     print(f"\n--- Training Phase {i+1}: {map_name} ({steps:,} steps) ---")
 
     if i > 0:
-        # Create a new parallel environment for the next map
+        # creating new parallel enviroment for next map
         new_env_kwargs = {"render_mode": None, "predefined_map": map_layout}
         new_vec_env = make_vec_env("standard", n_envs=CPUS, env_kwargs=new_env_kwargs)
         model.set_env(new_vec_env)
 
-    # Pass the callback here!
+    # callback added here
     model.learn(
         total_timesteps=steps, 
         reset_num_timesteps=False, 
         callback=checkpoint_callback
     )
 
-# 5. Save the final model
+# model saving
 model.save("group9_ppo_agent_final")
 print("\nTraining Complete! Saved as group9_ppo_agent_final.zip")
 input("Press Enter to run visual test...")
 
-# 6. Visual test (We use a single standard gym.make here so we can easily render it)
+# visual test
 print("\nStarting Visual Test on Chokepoint map...")
 env_human = gym.make("standard", render_mode="human", predefined_map=chokepoint_map)
 obs, _ = env_human.reset()

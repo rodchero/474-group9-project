@@ -7,8 +7,9 @@ OBSERVATION_STRUCTURE = "O1" #O1 else O2
 CURRENT_DANGER_LEVEL = 0
 
 def observation_space(env: gym.Env) -> gym.spaces.Space:
+    # 5x5 local grid observation space
     if OBSERVATION_STRUCTURE == "O1":
-        # 5x5 local grid (25) + exact rel_y, rel_x (21, 21) + exact enemy_y, enemy_x (21, 21) + 4 danger directions
+        # 5x5 local grid observation space
         return gym.spaces.MultiDiscrete(
                 [7] * 25 + 
                 [21, 21] + 
@@ -17,24 +18,19 @@ def observation_space(env: gym.Env) -> gym.spaces.Space:
                 [2] * 100  
             )
     else:
-        # Full 10x10 grid (100 cells, 7 colors)
-        # + Target relative Y, X              (3 options each)
-        # + Enemy relative Y, X               (4 options: 0/1/2 = direction, 3 = no enemy)
-        # + Danger flag                        (2 options: 0/1)
-        # + FOV pressure: red cells adjacent  (5 options: 0-4, how many of 4 dirs are red)
-        # + Blocked directions L/D/R/U        (2 options each)
-        # Total: 100 + 2 + 2 + 2 + 1 + 4 = 111 values
+        # entire 10x10 grid observation space
         return gym.spaces.MultiDiscrete([7] * 100 + [3, 3, 4, 4, 2, 5, 2, 2, 2, 2])
 
 
 def observation(grid: np.ndarray):
-    
+    # agent location finder
     agent_mask = np.all(grid == [160, 161, 161], axis=-1)
     coords = np.argwhere(agent_mask)
     ay, ax = coords[0] if len(coords) > 0 else (0, 0)
 
     if OBSERVATION_STRUCTURE == "O1":
 
+        # compressing rgb colours from gridworld into map
         c_map = {(0,0,0):0, (255,255,255):1, (101,67,33):2, (160,161,161):3,
                     (31,198,0):4, (255,0,0):5, (255,127,127):6}
         comp = np.zeros((10, 10), dtype=np.int8)
@@ -42,12 +38,12 @@ def observation(grid: np.ndarray):
             for j in range(10):
                 comp[i,j] = c_map.get(tuple(grid[i,j]), 0)
 
-        # 1. 5x5 Local Grid
+        # 5x5 local grid
         pad = np.pad(comp, 2, mode='constant', constant_values=2)
         cy, cx = ay + 2, ax + 2
         local_5x5 = pad[cy-2:cy+3, cx-2:cx+3].flatten()
 
-        # 2. Exact Delta to nearest Black cell (Mapped from [-10, 10] to [0, 20])
+        # find nearest black cell
         black_mask = np.all(grid == [0, 0, 0], axis=-1)
         blacks = np.argwhere(black_mask)
         if len(blacks) > 0:
@@ -56,9 +52,9 @@ def observation(grid: np.ndarray):
             rel_y = max(-10, min(10, ty - ay)) + 10
             rel_x = max(-10, min(10, tx - ax)) + 10
         else:
-            rel_y, rel_x = 10, 10 # Center/Zero delta
+            rel_y, rel_x = 10, 10 # center/zero delta
 
-        # 3. Exact Delta to nearest Enemy
+        # find exact delta to nearest guard
         enemy_mask = np.all(grid == [31, 198, 0], axis=-1)
         enemies = np.argwhere(enemy_mask)
         if len(enemies) > 0:
@@ -69,20 +65,19 @@ def observation(grid: np.ndarray):
         else:
             enemy_rel_y, enemy_rel_x = 10, 10
 
-        # 4. Immediate Directional Danger (Up, Down, Left, Right)
-        # Danger = Red (5), Light Red (6), or Enemy Green (4)
+        # helper function to find immediate danger around the agent
         def is_danger(y, x):
             if 0 <= y < 10 and 0 <= x < 10:
                 return 1 if comp[y, x] in [4, 5, 6] else 0
-            return 0 # Out of bounds (walls are safe)
-
+            return 0 # out of bounds
+        
+        # check each direction for danger
         danger_up = is_danger(ay - 1, ax)
         danger_down = is_danger(ay + 1, ax)
         danger_left = is_danger(ay, ax - 1)
         danger_right = is_danger(ay, ax + 1)
 
-        # 5. NEW: Global Unvisited Map (100 features)
-        # Convert the black_mask (True/False for unvisited cells) into 1s and 0s, and flatten it
+        # convert black_mask into 1 and 0's and flatten (true/false for unvisited cells)
         black_mask = np.all(grid == [0, 0, 0], axis=-1)
         global_unvisited = black_mask.flatten().astype(np.int64)
 
@@ -95,7 +90,7 @@ def observation(grid: np.ndarray):
             )).astype(np.int64)
 
     else:
-        # 2. Compress full 10x10 RGB grid to integer color IDs
+        # compress the full 10x10 RGB grid into integers
         c_map = {
             (0,   0,   0):   0,  # Black      - unexplored
             (255, 255, 255): 1,  # White      - explored
@@ -112,7 +107,7 @@ def observation(grid: np.ndarray):
 
         full_grid = comp.flatten()
 
-        # 3. Target compass: direction to nearest unexplored (black) cell
+        # compass to point agent towards closest black cell
         black_mask = np.all(grid == [0, 0, 0], axis=-1)
         blacks = np.argwhere(black_mask)
         if len(blacks) > 0:
@@ -123,7 +118,7 @@ def observation(grid: np.ndarray):
         else:
             rel_y, rel_x = 1, 1
 
-        # 4. Enemy compass: direction to nearest enemy (3 = no enemies)
+        # compass to point agent towards nearest guard
         enemy_mask = np.all(grid == [31, 198, 0], axis=-1)
         enemies = np.argwhere(enemy_mask)
         if len(enemies) > 0:
@@ -134,8 +129,8 @@ def observation(grid: np.ndarray):
         else:
             enemy_rel_y, enemy_rel_x = 3, 3
 
-        # 5. Danger flag: is the agent's current cell under FOV?
-        # True if agent is standing on a red/light-red cell
+  
+        # danger flag to see if the agent is currently in the guards fov
         agent_cell = comp[ay, ax]
         danger = int(agent_cell in (5, 6))
 
