@@ -161,7 +161,7 @@ def _train_one_agent(
     coverage_gridworld.custom.OBSERVATION_STRUCTURE = obs_structure
 
     checkpoint_callback = CheckpointCallback(
-        save_freq=max(1, 50_000 // cpus),
+        save_freq=max(1, 50_000),
         save_path=checkpoint_dir,
         name_prefix=f"agent_{agent_idx}",
     )
@@ -176,8 +176,8 @@ def _train_one_agent(
         verbose=0,
         learning_rate=3e-4,
         n_steps=2048,
-        batch_size=64,
-        n_epochs=10,
+        batch_size=512,
+        n_epochs=5,
         gamma=0.94,
         ent_coef=0.06,
         policy_kwargs=dict(net_arch=[256, 128, 64]),
@@ -196,7 +196,7 @@ def _train_one_agent(
 
         print("Training")
         model.learn(
-            total_timesteps=steps,
+            total_timesteps=steps//10_000,
             reset_num_timesteps=False,
             callback=checkpoint_callback,
         )
@@ -460,7 +460,7 @@ if __name__ == "__main__":
         if (o, r) not in EXCLUDE
     ]
 
-    NUM_AGENTS = 5
+    NUM_AGENTS = 1
     TOTAL_CPUS = os.cpu_count()
 
     print(f"Running {len(combinations)} combinations sequentially "

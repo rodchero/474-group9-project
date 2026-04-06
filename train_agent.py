@@ -3,7 +3,8 @@ import coverage_gridworld  # noqa: F401
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import CheckpointCallback
-import time
+
+from datetime import datetime
 
 #CPU cores used for training
 CPUS = 8
@@ -79,71 +80,73 @@ curriculum = [
 total_training = sum(s for _, _, s in curriculum)
 print(f"Total timesteps: {total_training}")
 
-# model saving to ensure we keep the best model before it collapses
-checkpoint_callback = CheckpointCallback(
-    save_freq=12500, 
-    save_path='./ppo_checkpoints/',
-    name_prefix='ppo_agent'
-)
 
-# environment parallelization 
-env_kwargs = {"render_mode": None, "predefined_map": curriculum[0][1]}
-first_vec_env = make_vec_env("standard", n_envs=CPUS, env_kwargs=env_kwargs)
+def run_train(save_num, reward_structure, obs_structure):
+    coverage_gridworld.custom.REWARD_STRUCTURE = reward_structure
+    coverage_gridworld.custom.OBSERVATION_STRUCTURE = obs_structure
 
-# PPO model defined HERE
-model = PPO(
-    "MlpPolicy",
-    first_vec_env,
-    tensorboard_log="./ppo_tensorboard_logs/",
-    verbose=1,
-    learning_rate=3e-4,
-    n_steps=2048,
-    batch_size=64,
-    n_epochs=10,
-    gamma=0.94,
-    ent_coef=0.06,  
-    policy_kwargs=dict(net_arch=[256, 128, 64]) # they call me "the funnel"
-)
-
-
-# train the model with our ciricullum
-for i, (map_name, map_layout, steps) in enumerate(curriculum):
-    print(f"\n--- Training Phase {i+1}: {map_name} ({steps:,} steps) ---")
-
-    if i > 0:
-        # creating new parallel enviroment for next map
-        new_env_kwargs = {"render_mode": None, "predefined_map": map_layout}
-        new_vec_env = make_vec_env("standard", n_envs=CPUS, env_kwargs=new_env_kwargs)
-        model.set_env(new_vec_env)
-
-    # callback added here
-    model.learn(
-        total_timesteps=steps, 
-        reset_num_timesteps=False, 
-        callback=checkpoint_callback
+    # model saving to ensure we keep the best model before it collapses
+    checkpoint_callback = CheckpointCallback(
+        save_freq=12500, 
+        save_path='./ppo_checkpoints/',
+        name_prefix='ppo_agent'
     )
 
-# model saving
-model.save("group9_ppo_agent_final")
-print("\nTraining Complete! Saved as group9_ppo_agent_final.zip")
-input("Press Enter to run visual test...")
+    # environment parallelization 
+    env_kwargs = {"render_mode": None, "predefined_map": curriculum[0][1]}
+    first_vec_env = make_vec_env("standard", n_envs=CPUS, env_kwargs=env_kwargs)
 
-# visual test
-print("\nStarting Visual Test on Chokepoint map...")
-env_human = gym.make("standard", render_mode="human", predefined_map=chokepoint_map)
-obs, _ = env_human.reset()
+    # PPO model defined HERE
+    model = PPO(
+        "MlpPolicy",
+        first_vec_env,
+        tensorboard_log=f"./ppo_tensorboard_logs/PPO_e2_{save_num}",
+        verbose=2,
+        learning_rate=3e-4,
+        n_steps=2048,
+        batch_size=64,
+        n_epochs=10,
+        gamma=0.94,
+        ent_coef=0.06,  
+        policy_kwargs=dict(net_arch=[256, 128, 64]) # they call me "the funnel"
+    )
 
-for i in range(500):
-    action, _ = model.predict(obs, deterministic=False) 
-    print(f"Step {i}: Agent action {action}")
-    obs, reward, done, trunc, info = env_human.step(action)
-    time.sleep(0.1)
 
-    if done or trunc:
-        status = "Game Over" if info.get("game_over") else "Cleared or Timeout"
-        coverage = info.get("total_covered_cells", "?")
-        coverable = info.get("coverable_cells", "?")
-        print(f"Episode ended! Status: {status} | Coverage: {coverage}/{coverable}")
-        break
+    # train the model with our ciricullum
+    for i, (map_name, map_layout, steps) in enumerate(curriculum):
+        print(f"[{datetime.now()}] Starting phase {i+1}: {map_name}", flush=True)
 
-env_human.close()
+        if i > 0:
+            # creating new parallel enviroment for next map
+            new_env_kwargs = {"render_mode": None, "predefined_map": map_layout}
+            new_vec_env = make_vec_env("standard", n_envs=CPUS, env_kwargs=new_env_kwargs)
+            model.set_env(new_vec_env)
+
+        # callback added here
+        model.learn(
+            total_timesteps=steps, 
+            reset_num_timesteps=False, 
+            callback=checkpoint_callback
+        )
+
+    # model saving
+    save_name = f"ppo_agent{save_num}"
+    model.save()
+    print(f"\nTraining Complete! Saved as {save_name}")
+    
+    env_human.close()
+
+
+reward_structures = ["R1", "R2", "speed"]
+obs_structures    = ["O1", "O2"]
+EXCLUDE           = {("O1", "R2")}   # (obs, reward) pairs to skip
+
+combinations = [
+    (r, o)
+    for r in reward_structures
+    for o in obs_structures
+    if (o, r) not in EXCLUDE
+]
+
+for i, (r, o) in enumerate(combinations):
+    run_train(i,r,o)
