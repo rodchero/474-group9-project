@@ -161,7 +161,7 @@ def _train_one_agent(
     coverage_gridworld.custom.OBSERVATION_STRUCTURE = obs_structure
 
     checkpoint_callback = CheckpointCallback(
-        save_freq=max(1, 50_ // cpus),
+        save_freq=max(1, 50_000 // cpus),
         save_path=checkpoint_dir,
         name_prefix=f"agent_{agent_idx}",
     )
@@ -185,12 +185,16 @@ def _train_one_agent(
 
     for i, (map_name, map_layout, steps) in enumerate(curriculum):
         print(f"  [Agent {agent_idx}] Phase {i+1}: {map_name} ({steps:,} steps)")
+        print(f"[{datetime.now()}] Starting phase {i+1}: {map_name}", flush=True)
         if i > 0:
+            print("Making Env")
             new_env = make_vec_env(
                 "standard", n_envs=cpus,
                 env_kwargs={"render_mode": None, "predefined_map": map_layout},
             )
             model.set_env(new_env)
+
+        print("Training")
         model.learn(
             total_timesteps=steps,
             reset_num_timesteps=False,
