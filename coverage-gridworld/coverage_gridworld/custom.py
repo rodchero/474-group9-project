@@ -92,13 +92,13 @@ def observation(grid: np.ndarray):
     else:
         # compress the full 10x10 RGB grid into integers
         c_map = {
-            (0,   0,   0):   0,  # Black      - unexplored
-            (255, 255, 255): 1,  # White      - explored
-            (101, 67,  33):  2,  # Brown      - wall
-            (160, 161, 161): 3,  # Grey       - agent
-            (31,  198, 0):   4,  # Green      - enemy
-            (255, 0,   0):   5,  # Red        - enemy FOV (unexplored)
-            (255, 127, 127): 6,  # Light red  - enemy FOV (explored)
+            (0,   0,   0):   0,  # black - unexplored
+            (255, 255, 255): 1,  # white - explored
+            (101, 67,  33):  2,  # brown - wall
+            (160, 161, 161): 3,  # grey  - agent
+            (31,  198, 0):   4,  # green - enemy
+            (255, 0,   0):   5,  # red   - enemy FOV (unexplored)
+            (255, 127, 127): 6,  # light-red - enemy FOV (explored)
         }
         comp = np.zeros((10, 10), dtype=np.int8)
         for i in range(10):
@@ -134,11 +134,9 @@ def observation(grid: np.ndarray):
         agent_cell = comp[ay, ax]
         danger = int(agent_cell in (5, 6))
 
-        # 6. FOV pressure: how many of the 4 adjacent cells are red/light-red?
-        # This is the enemy timing signal — it tells the agent how "surrounded"
-        # by guard vision it is right now. As a guard rotates away, this count
-        # drops from 2 → 1 → 0, teaching the agent to wait for 0 before moving
-        # into a previously-watched cell.
+  
+        # check if guard is facing agent or turning towards agent
+        # goes 2->1->0; 2 guard is facing agent, 0 means its facing away
         fov_pressure = 0
         for dy, dx in [(0, -1), (1, 0), (0, 1), (-1, 0)]:
             ny, nx = ay + dy, ax + dx
@@ -146,18 +144,19 @@ def observation(grid: np.ndarray):
                 if comp[ny, nx] in (5, 6):
                     fov_pressure += 1
 
+        # set current danger level that the agent is in based on how close it is to guards and the
+        # previously counted fov pressure
         global CURRENT_DANGER_LEVEL
         CURRENT_DANGER_LEVEL = fov_pressure
-        # 7. Blocked directions L/D/R/U
-        # Wall or enemy in that direction = 1, free = 0.
-        # This is computed purely from the current grid state — no wrapper needed.
+
+        # check which directions are blocked, 1 = blocked, 0 = free
         blocked = np.zeros(4, dtype=np.int64)
         for idx, (dy, dx) in enumerate([(0, -1), (1, 0), (0, 1), (-1, 0)]):
             ny, nx = ay + dy, ax + dx
             if not (0 <= ny < 10 and 0 <= nx < 10):
-                blocked[idx] = 1  # Grid edge = wall
+                blocked[idx] = 1  # grid edge = wall
             elif comp[ny, nx] in (2, 4):
-                blocked[idx] = 1  # Brown wall or green enemy = blocked
+                blocked[idx] = 1  # brown wall or green enemy are blocked
 
         return np.concatenate(
             (full_grid, [rel_y, rel_x, enemy_rel_y, enemy_rel_x,
@@ -168,18 +167,20 @@ def observation(grid: np.ndarray):
 def reward(info: dict) -> float:
     
     if REWARD_STRUCTURE == "R1": # first reward structure type
-        r = -0.1  # Standard step penalty
+        r = -0.1  # step penalty
 
         if info["new_cell_covered"]:
+            # check how many cells have been visited
             progress = (info["coverable_cells"] - info["cells_remaining"]) / max(info["coverable_cells"], 1)
             
             # THE ENDGAME SPIKE
             if info["cells_remaining"] <= 10:
-                # Desperation mode: The final cells are worth an absolute fortune. 
-                # The agent will gladly risk a death penalty for this.
+                # The final cells are worth alot
+                # The agent should risk dying to finish the map
                 r += 60.0 
             else:
-                # Standard progression reward
+                # reward for visiting a new cell, with a multiplier for how much progress the agent has made
+                # this is to encourage the agent to live longer in order to make more the further it gets 
                 r += 15.0 + (20.0 * progress) 
             
         if info["game_over"]:
