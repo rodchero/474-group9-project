@@ -3,7 +3,7 @@ import coverage_gridworld  # noqa: F401
 from stable_baselines3 import PPO
 import time
 
-# --- TRAINING MAPS (Seen by agent) ---
+# DEFINED TRAINING MAPS
 just_go_map = [
     [3, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -56,7 +56,7 @@ chokepoint_map = [
     [0, 0, 0, 0, 0, 0, 0, 2, 0, 0]
 ]
 
-# --- EVALUATION MAPS (Unseen by agent) ---
+# evaluation maps unseen by agent
 test_map1 = [
     [3, 0, 0, 0, 2, 0, 0, 0, 0, 0],
     [0, 0, 0, 0, 2, 0, 0, 0, 0, 0],
@@ -96,7 +96,7 @@ test_map3 = [
     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 ]
 
-# Add all maps to the iterable test list
+# map testing order
 maps_to_test = [
     ("JustGo (Train)", just_go_map),
     ("Safe (Train)", safe_map),
@@ -108,7 +108,7 @@ maps_to_test = [
 ]
 
 def main():
-    # 1. Load the PPO model
+
     model_path = "group9_ppo_agent_final" 
     print(f"Loading PPO model from {model_path}.zip...")
     
@@ -125,39 +125,36 @@ def main():
     print(f"\nRunning {num_runs} automated tests per map...")
     print("(Visual rendering is disabled for speed. This should only take a few seconds.)\n")
     
-    # 2. Iterate through every map
+    # loop to iterate through every map with our loaded model
     for map_name, map_layout in maps_to_test:
-        # Note: render_mode is None so we can brute-force the calculations instantly
         env = gym.make("standard", render_mode=None, predefined_map=map_layout)
         
         run_percentages = []
         
-        # Run 20 episodes on the current map
         for run in range(num_runs):
             obs, info = env.reset()
             done = False
             trunc = False
             
             while not (done or trunc):
-                # deterministic=False keeps the agent exploring and sneaking naturally
                 action, _states = model.predict(obs, deterministic=False)
                 obs, reward, done, trunc, info = env.step(action)
             
-            # Calculate the percentage for this specific episode
+            # calculate percentage for episode
             coverage = info.get("total_covered_cells", 0)
-            coverable = info.get("coverable_cells", 1)  # Default to 1 to avoid ZeroDivisionError
+            coverable = info.get("coverable_cells", 1)
             percentage = (coverage / coverable) * 100.0
             
             run_percentages.append(percentage)
             
         env.close()
         
-        # 3. Calculate average for the map
+        # calculate average for map
         avg_percentage = sum(run_percentages) / len(run_percentages)
         results[map_name] = avg_percentage
         print(f"✔ {map_name} complete.")
 
-    # 4. Print the final summary table
+    # summary table
     print("\n" + "=" * 46)
     print(f"| {'Map Name':<20} | {'Average Coverage':<18} |")
     print("-" * 46)
