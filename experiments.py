@@ -176,8 +176,8 @@ def _train_one_agent(
         verbose=0,
         learning_rate=3e-4,
         n_steps=2048,
-        batch_size=512,
-        n_epochs=5,
+        batch_size=64,
+        n_epochs=10,
         gamma=0.94,
         ent_coef=0.06,
         policy_kwargs=dict(net_arch=[256, 128, 64]),
@@ -196,7 +196,7 @@ def _train_one_agent(
 
         print("Training")
         model.learn(
-            total_timesteps=steps//10_000,
+            total_timesteps=steps,
             reset_num_timesteps=False,
             callback=checkpoint_callback,
         )
@@ -474,27 +474,20 @@ if __name__ == "__main__":
     parser.add_argument("experiment_id", type=int, help="id of the experiment to run")
     args = parser.parse_args()
 
-    print(f"Running {len(combinations)} combinations sequentially "
-          f"({NUM_AGENTS} agents in parallel each):")
-    for r, o in combinations:
-        print(f"  * {r}+{o}")
-    print()
+    i = args.experiment_id + 1
+    r, o = combinations[args.experiment_id]
 
-    for i in range(5):
-        #i = args.experiment_id + 1
-        r, o = combinations[args.experiment_id]
-
-        label = f"{r}+{o}"
-        print("\n" + "=" * 60)
-        print(f"Combination {i}/{len(combinations)}: {label}")
-        print("=" * 60)
-        exp = RLExperiment(
-            reward_structure=r,
-            obs_structure=o,
-            num_agents=NUM_AGENTS,
-            num_test_runs=20,
-            cpus_per_agent=TOTAL_CPUS,
-            output_folder="output",
-        )
-        exp()
-        print(f"{label} complete")
+    label = f"{r}+{o}"
+    print("\n" + "=" * 60)
+    print(f"Combination {i}/{len(combinations)}: {label}")
+    print("=" * 60)
+    exp = RLExperiment(
+        reward_structure=r,
+        obs_structure=o,
+        num_agents=NUM_AGENTS,
+        num_test_runs=20,
+        cpus_per_agent=TOTAL_CPUS,
+        output_folder="output",
+    )
+    exp()
+    print(f"{label} complete")

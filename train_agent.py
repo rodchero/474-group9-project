@@ -131,7 +131,7 @@ def run_train(save_num, reward_structure, obs_structure):
 
     # model saving
     save_name = f"ppo_agent{save_num}"
-    model.save()
+    model.save(save_name)
     print(f"\nTraining Complete! Saved as {save_name}")
     
     env_human.close()
